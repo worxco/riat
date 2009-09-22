@@ -1,0 +1,22 @@
+/* $Id: riat_admin.css,v 1.2 2009/07/29 22:20:36 eclipsegc Exp $ */
+
+div.branch {
+  position:relative;
+}
+
+span.relationship_options {
+  position:absolute;
+}
+
+span.relationship_options div.options {
+  position:relative;
+  background-color:#ffffff;
+  border: 1px solid #ccc;
+  z-index:100;
+  padding:0 10px 0 5px;
+}
+
+span.relationship_options div.options li,
+span.relationship_options div.options ul{
+  margin:0 auto;
+}

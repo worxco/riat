@@ -1,0 +1,750 @@
+<?php
+// $Id: riat_parent.module,v 1.7 2009/08/17 21:09:21 eclipsegc Exp $
+
+/**
+ * Implementation of hook_riat_relationships().
+ */
+
+function riat_parent_riat_relationships() {
+  $items['parent_node'] = array(
+    'title' => t('Parent'),
+    'context' => 'node',
+    'callback' => 'riat_parent',
+    'admin' => TRUE,
+  );
+  $items['child_node'] = array(
+    'title' => t('Child'),
+    'context' => 'node',
+    'callback' => 'riat_parent_child',
+    'child' => TRUE,
+    'node' => TRUE,
+    'menu' => TRUE,
+    'nodeapi' => array(
+      'insert',
+    ),
+    'attachable' => TRUE,
+  );
+  return $items;
+}
+
+/**
+ * Implementation of hook_menu().
+ */
+
+function riat_parent_menu() {
+  $items = array();
+  $items['admin/build/relationships/parent'] = array(
+    'title' => 'Parents',
+    'page callback' => 'riat_relationship_chain_admin_form',
+    'page arguments' => array(3),
+    'access arguments' => array('administer relationships'),
+    'file' => 'riat.admin.inc',
+    'file path' => drupal_get_path('module', 'riat'),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 1,
+  );
+  $items['admin/build/relationships/parent/%'] = array(
+    'title' => 'Parents',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('riat_relationship_chain_define_form', 3, 4),
+    'access arguments' => array('administer relationships'),
+    'file' => 'riat.admin.inc',
+    'file path' => drupal_get_path('module', 'riat'),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 1,
+  );
+  $items['admin/build/relationships/parent/chain/%riat'] = array(
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('riat_relationship_chain_build_form', 5),
+    'access arguments' => array('administer relationships'),
+    'file' => 'riat.admin.inc',
+    'file path' => drupal_get_path('module', 'riat'),
+    'type' => MENU_CALLBACK,
+    'weight' => 1,
+  );
+  $items['admin/build/relationships/parent/chain/%riat/%'] = array(
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('riat_relationship_add_relationship_form', 5, 6),
+    'access arguments' => array('administer relationships'),
+    'file' => 'riat.admin.inc',
+    'file path' => drupal_get_path('module', 'riat'),
+    'type' => MENU_CALLBACK,
+    'weight' => 1,
+  );
+  $items['admin/build/relationships/parent/%riat/edit'] = array(
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('riat_relationship_chain_edit_form', 4),
+    'access arguments' => array('administer relationships'),
+    'file' => 'riat.admin.inc',
+    'file path' => drupal_get_path('module', 'riat'),
+    'type' => MENU_CALLBACK,
+    'weight' => 1,
+  );
+  $items['admin/build/relationships/parent/%riat/delete'] = array(
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('riat_relationship_chain_delete_form', 4),
+    'access arguments' => array('administer relationships'),
+    'file' => 'riat.admin.inc',
+    'file path' => drupal_get_path('module', 'riat'),
+    'type' => MENU_CALLBACK,
+  );
+  $items['node/%node/parent_node_autocomplete'] = array(
+    'page callback' => 'riat_parent_child_parent_autocomplete',
+    'page arguments' => array(1),
+    'access arguments' => array('administer relationships'),
+    'file' => 'riat_parent.autocomplete.inc',
+    'file path' => drupal_get_path('module', 'riat_parent'),
+  );
+  $items['node/%node/delete_reparent_autocomplete'] = array(
+    'page callback' => 'riat_parent_child_delete_reparent_autocomplete',
+    'page arguments' => array(1),
+    'access arguments' => array('administer relationships'),
+    'file' => 'riat_parent.autocomplete.inc',
+    'file path' => drupal_get_path('module', 'riat_parent'),
+  );
+  $items['node/%node/riat/parent'] = array(
+    'title' => 'Parent',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('riat_parent_child_node_form_elements', 1),
+    'access callback' => 'riat_parent_child_riat_access_rules',
+    'access arguments' => array(1),
+    'type' => MENU_LOCAL_TASK,
+  );
+  return $items;
+}
+
+/**
+ * Implementation of hook_perm().
+ */
+
+function riat_parent_perm() {
+  return array('administer parentage');
+}
+
+/**
+ * Implementation of hook_help().
+ */
+
+function riat_parent_help($path, $arg) {
+  $output = '';
+  switch ($path) {
+    case 'admin/build/relationships/parent':
+      $output .= '<p>'. t('Defining node types that are eligible to be parents allows you to perform a number of different actions.  The first and most important is the ability to create top level parents.  These are any node type that are not also defined as children.') .'</p>';
+      $output .= '<p>'. t('Nodes may also be defined as children within the child casting area.  Without children, parent cast nodes are relatively useless.') .'</p>';
+    return $output;
+  }
+}
+
+/**
+ * Implementation of hook_nodeapi().
+ */
+
+function riat_parent_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
+  switch ($op) {
+    case 'prepare':
+      if ($node->riat['rel_key'] == 'child_node') {
+        $node->riat_parent = riat_parent_get($node);
+      }
+      break;
+    case 'load':
+      // Load up the parent information.
+      $parent = riat_parent_get($node);
+      if ($parent) {
+        $return['riat_parent'] = $parent;
+      }
+      return $return;
+    case'view':
+      if ($a4) {
+        if ($parent = riat_parent_get($node)) {
+          $node->riat_parent = $parent;
+        }
+      }
+      break;
+    case 'delete':
+      db_query("DELETE FROM {riat_relationships_descendants} WHERE did = %d", $node->nid);
+      db_query("DELETE FROM {riat_relationships_descendants} WHERE nid = %d", $node->nid);
+      break;
+  }
+}
+
+function riat_parent_form_alter(&$form, $form_state, $form_id) {
+  switch ($form_id) {
+    case 'node_admin_content':
+      if ($form_state['values']['operation'] == 'delete') {
+        $descendants = array();
+        $children = array();
+        foreach ($form_state['values']['nodes'] as $nid) {
+          if ($nid) {
+            if ($descendants = riat_parent_child_descendants_lookup($nid)) {
+              $form['description']['#value'] = '<p>'. t('<strong>One or more of the selected nodes have descendants attached to them, your only option from this screen is a cascading delete.</strong><br />If you would like to reparent any child nodes involved you may do so by deleting parent nodes individually and following the deletion screens.  This will result in a cascading reparent action.  If you would rather reparent only specific child nodes you may do so by visiting those nodes individual parent tabs under the node\'s relationship tab.') .'</p>';
+              $form['description']['#value'] .= '<p>'. t('<strong>Continuing with this action may not be undone.</strong>') .'</p>';
+              // Finish up the cascading delete functionality.
+              $form['descendants'] = array(
+                '#type' => 'value',
+                '#value' => $descendants,
+              );
+              $form['actions']['submit']['#value'] = t('Cascading Delete');
+              $form['#submit'][] = 'riat_parent_cascading_submit';
+            }
+          }
+        }
+      }
+      break;
+    case 'node_delete_confirm':
+      // Lets get our node that we're about to delete
+      $node = menu_get_object();
+      // And let's check to see if it's a node with a parent casting on it.
+      $pchid = riat_pchid_load($node->riat['chid']);
+      if (is_object($pchid[0])) {
+        // If it is has a parent casting, it probably has descendants.  Find them...
+        if ($descendants = riat_parent_child_descendants_lookup($node->nid)) {
+          $form['description']['#value'] = '<p>'. t('<strong>This node has descendants attached to it, you may proceed in one of two ways:</strong><br />You may select a node to transfer this node\'s descendants to by entering it into the node reference field below. Optionally you may simply delete all descendant nodes.') .'</p>';
+          $form['description']['#value'] .= '<p>'. t('This action cannot be undone.') .'</p>';
+          /**
+           * If it has descendants we're going to have to figure out what to do about them.
+           * We're providing the option to cascade the delete all the way down the tree,
+           * or to move the descendants to a new eligible parent node.
+           */
+          $form['descendants'] = array(
+            '#type' => 'value',
+            '#value' => $descendants,
+          );
+          $form['children'] = array(
+            '#type' => 'value',
+            '#value' => riat_parent_children_lookup($node->nid),
+          );
+          //The riat system's views, menus, and administration need serious refactoring to allow for chain definitions and all that implies.
+          $form['parent'] = array(
+            '#type' => 'textfield',
+            '#title' => t('New Parent'),
+            '#description' => t('Optionally select a new parent.'),
+            '#autocomplete_path' => 'node/'. $node->nid .'/delete_reparent_autocomplete',
+          );
+          $button['move'] = array(
+            '#type' => 'submit',
+            '#value' => t('Reparent Children'),
+          );
+          array_unshift($form['actions'], $button);
+          $form['actions']['submit']['#value'] = t('Cascading Delete');
+          $actions = $form['actions'];
+          unset($form['actions']);
+          array_push($form, $actions);
+          $form['#validate'][] = 'riat_parent_cascading_validate';
+          $form['#submit'][] = 'riat_parent_cascading_submit';
+        }
+      }
+      break;
+  }
+}
+
+function riat_parent_cascading_validate($form, &$form_state) {
+  switch ($form_state['values']['op']) {
+    case 'Reparent Children':
+      if (!$form_state['values']['parent']) {
+        form_set_error('parent', t('If you are trying to reparent nodes, you MUST specify a new parent.'));
+      }
+      break;
+  }
+}
+
+function riat_parent_cascading_submit($form, &$form_state) {
+  switch ($form_state['values']['op']) {
+    case 'Cascading Delete':
+      $batch = array(
+        'title' => $form_state['values']['op'],
+        'progress_message' => 'Deleting @current of @total.',
+        'operations' => array(),
+        'finished' => '_riat_parent_cascading_delete_batch_finished',
+        'file' => drupal_get_path('module', 'riat_parent') .'/riat_parent.batch.inc',
+      );
+      foreach ($form_state['values']['descendants'] as $descendant) {
+        $batch['operations'][] = array('_riat_parent_cascading_delete_batch', array($descendant));
+      }
+      batch_set($batch);
+      break;
+    case 'Reparent Children':
+      $batch = array(
+        'title' => $form_state['values']['op'],
+        'progress_message' => 'Reparenting @current of @total.',
+        'operations' => array(),
+        'finished' => '_riat_parent_cascading_reparent_batch_finished',
+        'file' => drupal_get_path('module', 'riat_parent') .'/riat_parent.batch.inc',
+      );
+      $parent = $form_state['values']['parent'];
+      $parent_nid = substr($parent, strpos($parent, '[nid:') + 5, -1);
+      foreach ($form_state['values']['children'] as $child) {
+        $node = node_load($child->nid);
+        $batch['operations'] = array_merge($batch['operations'], array(array('riat_node_relationship_save', array($node->riat['rid'], $node->riat['chid'], $node->nid, $parent_nid, 'child_node', 'update'))));
+        $batch['operations'] = array_merge($batch['operations'], riat_parent_child_reparent_batch_prepare($child, $parent_nid));
+      }
+      batch_set($batch);
+      break;
+  }
+}
+
+/**
+ * Returns a list of all node types that define themselves as
+ * children. This is specifically used within the riat_parent_admin_form
+ * function to populate the options of node types that are
+ * associated with any child relationship.
+ */
+
+function riat_parent_get_children_types() {
+  $types = node_get_types();
+  $relationships = riat_get_all(array('child' => TRUE));
+  $children = array();
+  foreach ($relationships as $key => $relationship) {
+    foreach ($types as $type) {
+      if (variable_get('node_'. $type->type .'_'. $key, 0)) {
+        $children[$type->type] = $type->name;
+      }
+    }
+  }
+  return $children;
+}
+
+/**
+ * Implementation of hook_token_list()
+ */
+function riat_parent_token_list($type = 'all') {
+  if ($type == 'node' || $type == 'all') {
+    $tokens['node']['parent-title'] = t('Title of the direct parent');
+    $tokens['node']['parent-title-raw'] = t('Unfiltered title of the direct parent. WARNING - raw user input.');
+    $tokens['node']['parent-path-alias'] = t('The path alias of the direct parent');
+    $tokens['node']['parent-id'] = t('ID of the direct parent');
+    return $tokens;
+  }
+}
+
+/**
+ * Implementation of hook_token_values() for riat specific tokens
+ */
+function riat_parent_token_values($type, $object = NULL) {
+  switch ($type) {
+    case 'node':
+      $query = db_fetch_object(db_query("SELECT nid, aid, relationship FROM {riat_node_relationship} WHERE nid = %d and relationship = 'child_node'", $object->nid));
+      $node = node_load($query->aid);
+      $values['parent-title'] = check_plain($node->title);
+      $values['parent-title-raw'] = $node->title;
+      $values['parent-path-alias'] = drupal_get_path_alias('node/'. $node->nid);
+      $values['parent-id'] = $node->nid;
+      return $values;
+  }
+  
+  // No parent info found. Return defaults.
+  $values['parent-title'] = '';
+  $values['parent-title-raw'] = '';
+  $values['parent-path-alias'] = '';
+  $values['parent-id'] = '';
+  return $values;
+}
+
+function riat_parent_riat_node_help() {
+  if (module_exists('riat_parent_access')) {
+    return riat_parent_access_riat_node_help();
+  }
+}
+
+function riat_parent_riat_access_rules($node) {
+  if (module_exists('riat_parent_access')) {
+    return riat_parent_access_riat_access_rules($node);
+  }
+}
+
+/**
+ * Begin implementation of child_node relationship here.
+ *
+ * Since the parent and child implementations are essentially
+ * useless without each other, both are implemented together
+ * in this single module.  However, both could implement their
+ * own versions of particular hooks, and as such, the riat API
+ * has been formulated to do module invokations based on
+ * relationship callbacks, and not a simple "module_invoke_all".
+ */
+
+/**
+ * implementation of hook_riat_node_help().
+ */
+
+function riat_parent_child_riat_node_help() {
+  $node = menu_get_object();
+  if (riat_parent_child_riat_access_rules($node)) {
+    $output = '<h3>'. t('Node Parent:') .'</h3>';
+    $output .= '<p>'. t('Nodes are related to each other through a hierarchy parent child relationships. With this tool you may change the direct parent of this node, however there are some significant issues with doing this.') .'</p>';
+    $output .= '<p>'. t('<em>If your nodes are utilizing multiple levels of access privileges reparenting a node will set all nodes to have the same access restrictions as the current <strong>NEW</strong> parent does.  This is to prevent any potential issues with nodes becoming semi-unaccessible or simply becoming lost.</em>') .'</p>';
+    return $output;
+  }
+}
+
+function riat_parent_child_riat_access_rules($node) {
+  // When per gid perms get in, this needs to be expanded.
+  if (!is_null($node->riat_parent['id'])) {
+    return user_access('administer parentage');
+  }
+  return FALSE;
+}
+
+function riat_parent_child_node_form_elements($form_state, $node) {
+  if ($node->riat_parent['formatted']) {
+    $parent = $node->riat_parent;
+  }
+  else {
+    if ($parent['id'] == arg(1)) {
+      $pnode = node_load($parent['id']);
+      $parent['title'] = $pnode->title;
+      if ($parent['title'] && $parent['id']) {
+        $parent['formatted'] = $parent['title'].' [nid:'. $parent['id'] .']';
+      }
+    }
+    else {
+      $parent = riat_parent_get($node);
+    }
+  }
+  $form['fieldset'] = array(
+    '#type' => 'fieldset',
+    '#title' => 'Parent Reference',
+    '#collapsible' => TRUE,
+  );
+  $form['fieldset']['reference'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Parent'),
+    '#description' => t('This is  your parent.'),
+    '#disabled' => TRUE,
+    '#required' => TRUE,
+  );
+  if (is_numeric($node->nid) && arg(2) == 'riat' && arg(3) == 'parent') {
+    $form['fieldset']['#collapsed'] = FALSE;
+    $form['fieldset']['reference']['#default_value'] = $parent['formatted'] ? $parent['formatted'] : '';
+    $form['fieldset']['reference']['#disabled'] = FALSE;
+    $form['fieldset']['reference']['#autocomplete_path'] = 'node/'. arg(1) .'/parent_node_autocomplete';
+    $form['submit'] = array(
+      '#type' => 'submit',
+      '#value' => t('Submit'),
+      '#validate' => array('riat_parent_child_reparent_validate'),
+      '#submit' => array('riat_parent_child_reparent_submit'),
+    );
+  }
+  else {
+    $form['fieldset']['#collapsed'] = TRUE;
+    $form['fieldset']['reference']['#value'] = $parent['formatted'] ? $parent['formatted'] : '';
+  }
+  $form['fieldset']['parent_id'] = array(
+    '#type' => 'value',
+    '#value' => $parent['id'],
+  );
+  $form['fieldset']['relationship'] = array(
+    '#type' => 'value',
+    '#value' => 'child_node',
+  );
+  return $form;
+}
+
+function riat_parent_child_reparent_validate($form, &$form_state) {
+  $id = substr($form_state['values']['reference'], strpos($form_state['values']['reference'], '[nid:'));
+  $form_state['values']['parent_id'] = substr($id, 5, -1);
+  // check to make sure that the new parent is valid
+}
+
+function riat_parent_child_reparent_batch_prepare($node, $pid) {
+  // Lookup old ancestors so we can remove them.
+  $old_ancestors = riat_parent_child_ancestors_lookup($node->nid);
+  // Find new ancestors (these are actually ancestors of the new parent, but since they contain the same ancestors, we can use the 'nid' data, however, the 'did' data is for the parent, not our node).
+  $new_ancestors = riat_parent_child_ancestors_lookup($pid);
+  // Build up the parent as an ancestor.
+  $parent_ancestor = new stdClass();
+  $parent_ancestor->nid = $pid;
+  $parent_ancestor->did = $node->nid;
+  $new_ancestors[] = $parent_ancestor;
+  if ($old_ancestors) {
+    foreach ($old_ancestors as $ancestor) {
+      $return[] = array('_riat_parent_cascading_fix_ancestors_batch', array($node->riat['rid'], $node->riat['chid'], $node->nid, $ancestor->nid, 'delete'));
+    }
+  }
+  if ($new_ancestors) {
+    foreach ($new_ancestors as $ancestor) {
+      $return[] = array('_riat_parent_cascading_fix_ancestors_batch', array($node->riat['rid'], $node->riat['chid'], $node->nid, $ancestor->nid, 'insert'));
+    }
+  }
+  $descendants = riat_parent_child_descendants_lookup($node->nid);
+  if ($descendants) {
+    // Update the descendants table.
+    foreach ($descendants as $descendant) {
+      $descendant = node_load($descendant->did);
+      if ($old_ancestors) {
+        foreach ($old_ancestors as $ancestor) {
+          $return[] = array('_riat_parent_cascading_fix_ancestors_batch', array($descendant->riat['rid'], $descendant->riat['chid'], $descendant->nid, $ancestor->nid, 'delete'));
+        }
+      }
+      if ($new_ancestors) {
+        foreach ($new_ancestors as $ancestor) {
+          $return[] = array('_riat_parent_cascading_fix_ancestors_batch', array($descendant->riat['rid'], $descendant->riat['chid'], $descendant->nid, $ancestor->nid, 'insert'));
+        }
+      }
+    }
+  }
+  // hook call to other reparenting batch processes? need to see if we can load include files during this hook and get access to their functions ala batch functions
+  return $return;
+}
+
+function riat_parent_child_reparent_submit($form, &$form_state) {
+  $node = menu_get_object();
+  $historical_parent = riat_parent_get($node);
+  $pnode = node_load($form_state['values']['parent_id']);
+  $node->riat_parent['historical'] = $historical_parent['id'];
+  $node->riat_parent['id'] = $pnode->nid;
+  $node->riat_parent['aid'] = $pnode->nid;
+  $node->riat_parent['title'] = $pnode->title;
+  $node->riat_parent['formatted'] = $pnode->title .' [nid:'. $pnode->nid .']';
+  //drupal_set_message('<pre>'. print_r($node, TRUE) .'</pre>');
+  node_save($node);
+  drupal_set_message(t("$node->nid has been reparented to $pnode->nid"));
+  $batch = array(
+    'title' => $form_state['values']['op'],
+    'progress_message' => 'Reparenting @current of @total.',
+    'operations' => riat_parent_child_reparent_batch_prepare($node, $form_state['values']['parent_id']),
+    'finished' => '_riat_parent_cascading_reparent_batch_finished',
+    'file' => drupal_get_path('module', 'riat_parent') .'/riat_parent.batch.inc',
+  );
+  batch_set($batch);
+}
+
+function riat_parent_child_descendants_lookup($nid) {
+  $query = db_query("SELECT nid, did from {riat_relationships_descendants} WHERE nid = %d", $nid);
+  while($result = db_fetch_object($query)) {
+    $results[] = $result;
+  }
+  return $results;
+}
+
+function riat_parent_child_ancestors_lookup($nid) {
+  $query = db_query("SELECT nid, did from {riat_relationships_descendants} WHERE did = %d", $nid);
+  while($result = db_fetch_object($query)) {
+    $results[] = $result;
+  }
+  return $results;
+}
+
+function riat_parent_children_lookup($nid) {
+  $query = db_query("SELECT nid from {riat_node_relationship} WHERE aid = %d", $nid);
+  while($result = db_fetch_object($query)) {
+    $results[] = $result;
+  }
+  return $results;
+}
+
+function riat_parent_lookup($nid) {
+  $query = db_query("SELECT aid from {riat_node_relationship} WHERE nid = %d", $nid);
+  while($result = db_fetch_object($query)) {
+    $results[] = $result;
+  }
+  return $results;
+}
+
+/**
+ * This function's task is to find the nid of the direct
+ * parent of a node that is being created or loaded.
+ */
+
+function riat_parent_get($node) {
+  if (is_numeric($node->nid)) {
+    $pid = riat_parent_lookup($node->nid);
+    $pnode = node_load($pid[0]->aid);
+    $parent['id'] = $pnode->nid;
+    $parent['title'] = $pnode->title;
+    if ($parent['title'] && $parent['id']) {
+      $parent['formatted'] = $parent['title'].' [nid:'. $parent['id'] .']';
+    }
+    return $parent;
+  }
+  elseif (arg(0) == 'node' && is_numeric(arg(1)) && $node->nid != arg(1)) {
+    $pnode = node_load(arg(1));
+    $parent['id'] = $pnode->nid;
+    $parent['title'] = $pnode->title;
+    if ($parent['title'] && $parent['id']) {
+      $parent['formatted'] = $parent['title'].' [nid:'. $parent['id'] .']';
+    }
+    return $parent;
+  }
+  else {
+    return NULL;
+  }
+}
+
+function riat_parent_child_descendant_save($rid, $chid, $nid, $did, $op = 'insert', $pid = 0) {
+  if (is_numeric($nid) && is_numeric($did)) {
+    switch ($op) {
+      case 'insert':
+        db_query("INSERT into {riat_relationships_descendants} (rid, chid, nid, did) VALUES (%d, %d, %d, %d)", $rid, $chid, $nid, $did);
+        return TRUE;
+      case 'update':
+        if ($pid) {
+          db_query("UPDATE {riat_relationships_descendants} SET nid = %d WHERE did = %d AND nid = %d", $nid, $did, $pid);
+        }
+        return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+
+function riat_parent_child_node_form_elements_validate($form, &$form_state) {
+  if (empty($form_state['values']['child_node_form']['fieldset']['reference'])) {
+    form_set_error("child_node_form][fieldset][reference", t('You MUST specify a parent for this node type.'));
+  }
+  $form_state['values']['riat_parent']['id'] = substr($form_state['values']['child_node_form']['fieldset']['reference'], strpos($form_state['values']['child_node_form']['fieldset']['reference'], '[nid:') + 5, -1);
+  // Add check to make sure the chosen parent is valid.  The auto-complete already does this, but someone could manually set it to something wrong.
+}
+
+function riat_parent_child_relationship_save($node, $op = 'insert') {
+  $relationship = $node->rel_key ? $node->rel_key : $node->riat['rel_key'];
+  switch ($op) {
+    case 'insert':
+      if (is_numeric($node->riat_parent['id'])) {
+        $parent = node_load($node->riat_parent['id']);
+        $node->riat_parent['title'] = $parent->title;
+        $node->riat_parent['formatted'] = $parent->title.' [nid:'. $parent->nid .']';
+        riat_node_relationship_save($node->rid, $node->chid, $node->nid, $node->riat_parent['id'], $relationship, $op);
+        $ancestors = riat_parent_child_ancestors_lookup(arg(1));
+        $set_parent = new stdClass();
+        $set_parent->nid = $node->riat_parent['id'];
+        $set_parent->did = $node->nid;
+        $ancestors[] = $set_parent;
+        foreach ($ancestors as $ancestor) {
+          riat_parent_child_descendant_save($node->rid, $node->chid, $ancestor->nid, $node->nid, $op);
+        }
+      }
+      break;
+    case 'update':
+      riat_node_relationship_save($node->rid, $node->chid, $node->nid, $node->riat_parent['id'], $relationship, $op);
+      break;
+  }
+}
+
+/**
+ * Implementation of hook_block().
+ */
+
+function riat_parent_block($op = 'list', $delta = 0, $edit = array()) {
+  switch ($op) {
+    case 'list':
+      $block[0] = array(
+        'info' => t('Create Children'),
+      );
+      return $block;
+
+    case 'view':
+      switch ($delta) {
+        case 0:
+          if (arg(0) == 'node' && is_numeric(arg(1))) {
+            $node = menu_get_object();
+            if (node_access('view', $node)) {
+              return riat_parent_child_block_children($node);
+            }
+          }
+          else {
+            break;
+          }
+      }
+  }
+}
+
+function riat_parent_child_block_children($node) {
+  global $user;
+  $links = array();
+  module_load_include('inc', 'riat', 'includes/riat_menu');
+  $children = riat_menu_get_context('block');
+  $links = riat_parent_child_children_links($children, $user, $node);
+  if ($links) {
+    $block['subject'] = t("Options");
+    $block['content'] = theme('item_list', $links);
+    return $block;
+  }
+}
+
+function riat_parent_child_children_links($children = array(), $user, $node) {
+  $parent = riat_parent_get($node);
+  $types = node_get_types();
+  if ($parent['id']) {
+    $links["parent_node"] = l($parent['title'], 'node/'. $parent['id']);
+  }
+  if ($children) {
+    foreach ($children as $child) {
+      $chid = riat_chid_load($child);
+      $pchid = $chid->pchid ? riat_chid_load($chid->pchid) : riat_load($chid->rid);
+      $name = str_replace('_', ' ', $chid->type);
+      if (module_invoke($types[$chid->type]->module, 'access', 'create', $name, $user) && $node->type == $pchid->type && $node->riat['rid'] == $chid->rid) {
+        $links["create_". $chid->type] = l(t('Create !type', array('!type' => $name)), "node/$node->nid/create_". $chid->chid,
+          array(
+            'title' => t('Add a new !type in this group.', array('!type' => $name)),
+          )
+        );
+      }
+    }
+  }
+  return $links;
+}
+
+/**
+ * Implementation of hook_views_api().
+ */
+function riat_parent_views_api() {
+  return array(
+    'api' => 2,
+    'path' => drupal_get_path('module', 'riat_parent') . '/includes',
+  );
+}
+
+/**
+ * Implementation of hook_views_data().
+ */
+
+function riat_parent_views_data() {
+  $data['riat_relationships_descendants']['table']['group'] = t('Relationship');
+  
+  $data['riat_relationships_descendants']['table']['join']['node'] = array(
+    'left_field' => 'nid',
+    'field' => 'did',
+  );
+
+  $data['riat_relationships_descendants']['nid'] = array(
+    'title' => t('Ancestor'),
+    'help' => t('The ancestrial node ID of the descendant.'),
+    'field' => array(
+      'handler' => 'views_handler_field_node',
+      'click sortable' => TRUE,
+    ),
+    'argument' => array(
+      'handler' => 'views_handler_argument_node_nid',
+      'name field' => 'title',
+      'numeric' => TRUE,
+      'validate type' => 'nid',
+    ),
+    'filter' => array(
+      'handler' => 'views_handler_filter_numeric',
+    ),
+    'sort' => array(
+      'handler' => 'views_handler_sort',
+    ),
+  );
+  $data['riat_relationships_descendants']['did'] = array(
+    'title' => t('Descendant'),
+    'help' => t('The node ID of the descendant node.'),
+    'field' => array(
+      'handler' => 'views_handler_field_node',
+      'click sortable' => TRUE,
+    ),
+    'argument' => array(
+      'handler' => 'views_handler_argument_node_nid',
+      'name field' => 'title',
+      'numeric' => TRUE,
+      'validate type' => 'nid',
+    ),
+    'filter' => array(
+      'handler' => 'views_handler_filter_numeric',
+    ),
+    'sort' => array(
+      'handler' => 'views_handler_sort',
+    ),
+  );
+  return $data;
+}

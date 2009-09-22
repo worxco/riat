@@ -1,0 +1,83 @@
+<?php
+// $Id: riat_parent_views.install,v 1.2 2009/07/26 19:12:46 eclipsegc Exp $
+
+function riat_parent_views_install() {
+  db_query("UPDATE {system} SET weight = 49 WHERE name = 'riat_parent_views'");
+  drupal_install_schema('riat_parent_views');
+  riat_parent_views_initial_db_sync();
+}
+
+function riat_parent_views_uninstall() {
+  drupal_uninstall_schema('riat_parent_views');
+}
+
+function riat_parent_views_schema() {
+  $schema['riat_parent_views'] = array(
+    'description' => t('A table that holds the display order and preferences of views for each node type'),
+    'fields' => array(
+      'chid' => array(
+        'description' => t('The parent chain identifier.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'rid' => array(
+        'description' => t('The relationship identifier.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'view_name' => array(
+        'description' => t('The view name of the view we are sorting.'),
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'state' => array(
+        'description' => t('Display state.'),
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => '0',
+      ),
+    ),
+   'indexes' => array(
+     'chid' => array('chid'),
+     'rid' => array('rid'),
+    ),
+    'primary key' => array('view_name'),
+  );
+  return $schema;
+}
+
+function riat_parent_views_initial_db_sync() {
+  $first_query = db_query("SELECT rid, chid, pchid, type FROM {riat_chain} ORDER BY rid");
+  $rid = 0;
+  while ($result = db_fetch_object($first_query)) {
+    if ($rid && $rid == $result->rid) {
+      $chid = riat_chid_load($result->chid);
+      if ($chid->pchid) {
+        $pchid = riat_chid_load($chid->pchid);
+        $view_name = $result->chid .'_'. $pchid->type .'_'. $result->type;
+      }
+      else {
+        $view_name = $result->chid .'_'. $current_rid->type .'_'. $result->type;
+      }
+      db_query("INSERT INTO {riat_parent_views} (chid, rid, view_name, state) VALUES (%d, %d, '%s', %d)", $result->chid, $result->rid, $view_name, 0);
+    }
+    else {
+      $rid = $result->rid;
+      $current_rid = riat_load($rid);
+      $chid = riat_chid_load($result->chid);
+      if ($chid->pchid) {
+        $pchid = riat_chid_load($chid->pchid);
+        $view_name = $result->chid .'_'. $pchid->type .'_'. $result->type;
+      }
+      else {
+        $view_name = $result->chid .'_'. $current_rid->type .'_'. $result->type;
+      }
+      db_query("INSERT INTO {riat_parent_views} (chid, rid, view_name, state) VALUES (%d, %d, '%s', %d)", $result->chid, $result->rid, $view_name, 0);
+    }
+  }
+}

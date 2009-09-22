@@ -1,0 +1,6 @@
+; $Id: riat_parent_views.info,v 1.1 2009/06/18 03:54:45 eclipsegc Exp $
+name = "RIAT Parent Views"
+description = "Creates views dynamically for each parent node type/child node type relationship."
+package = "Relationship Is Already Taken"
+core = 6.x
+dependencies[] = riat_parent

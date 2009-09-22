@@ -1,0 +1,6 @@
+; $Id: riat_parent.info,v 1.1 2009/06/18 03:54:44 eclipsegc Exp $
+name = "RIAT Parent"
+description = "A component for defining parent relationships."
+package = "Relationship Is Already Taken"
+core = 6.x
+dependencies[] = riat

@@ -1,0 +1,51 @@
+<?php
+// $Id: riat_parent.install,v 1.2 2009/07/26 19:12:46 eclipsegc Exp $
+
+function riat_parent_install() {
+  db_query("UPDATE {system} SET weight = 50 WHERE name = 'riat_parent'");
+  drupal_install_schema('riat_parent');
+}
+
+function riat_parent_uninstall() {
+  drupal_uninstall_schema('riat_parent');
+  // Write foreach loops to remove all variables.
+}
+
+function riat_parent_schema() {
+  $schema['riat_relationships_descendants'] = array(
+    'description' => t('A table that holds the descendant relationships of every node.'),
+    'fields' => array(
+      'rid' => array(
+        'type' => 'int',
+        'description' => t('The relationship identifier.'),
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'chid' => array(
+        'description' => t('The primary chain link identifier.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'nid' => array(
+        'description' => t('The primary node identifier.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'did' => array(
+        'description' => t('The descendant node identifier.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+    ),
+   'indexes' => array(
+     'rid' => array('rid'),
+     'chid' => array('chid'),
+     'nid' => array('nid'),
+     'did' => array('did'),
+    ),
+  );
+  return $schema;
+}

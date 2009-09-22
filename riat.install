@@ -1,0 +1,219 @@
+<?php
+// $Id: riat.install,v 1.2 2009/07/26 19:12:45 eclipsegc Exp $
+
+function riat_install() {
+  db_query("UPDATE {system} SET weight = 51 WHERE name = 'riat'");
+  drupal_install_schema('riat');
+}
+
+function riat_uninstall() {
+  drupal_uninstall_schema('riat');
+  $types = node_get_types();
+  foreach ($types as $type) {
+    variable_del('riat_hide_'. $type->type);
+  }
+}
+
+function riat_schema() {
+  $schema['riat_node_relationship'] = array(
+    'description' => t('A table that holds the basic relationship associations.'),
+    'fields' => array(
+      'rid' => array(
+        'type' => 'int',
+        'description' => t('The relationship identifier.'),
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'chid' => array(
+        'type' => 'int',
+        'description' => t('The chain identifier.'),
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'nid' => array(
+        'description' => t('The primary node identifier.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'aid' => array(
+        'description' => t('The associated node identifier.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'relationship' => array(
+        'description' => t('The type of relationship between the nodes'),
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+    ),
+   'indexes' => array(
+     'nid' => array('nid'),
+     'aid' => array('aid'),
+     'rid' => array('rid'),
+    ),
+  );
+  $schema['riat_menu'] = array(
+    'description' => t('A table that holds the various contexts in which menu items should appear.'),
+    'fields' => array(
+      'chid' => array(
+        'type' => 'int',
+        'description' => t('The chain link identifier.'),
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'context' => array(
+        'description' => t('The context in which to show the link for this relationship/callback pairing.'),
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+    ),
+   'indexes' => array(
+     'chid' => array('chid'),
+     'context' => array('context'),
+    ),
+  );
+  $schema['riat_menu_tracker'] = array(
+    'description' => t('A table that riat created mlids to rids'),
+    'fields' => array(
+      'mlid' => array(
+        'type' => 'int',
+        'description' => t('The mlid'),
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'rid' => array(
+        'type' => 'int',
+        'description' => t('The rid'),
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+    ),
+   'indexes' => array(
+     'rid' => array('rid'),
+    ),
+    'primary key' => array('mlid'),
+  );
+  $schema['riat_chain_definition'] = array(
+    'description' => t('Contains the relationship definitions.  This would be very similar to a content type definition.'),
+    'fields' => array(
+      'rid' => array(
+        'type' => 'serial',
+        'description' => t('Relationship Identifier'),
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'title' => array(
+        'description' => t('The name of the chain.'),
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+      ),
+      'description' => array(
+        'description' => t('The relationship chain description.'),
+        'type' => 'text',
+        'not null' => TRUE,
+        'default' => '',
+        'size' => 'medium',
+      ),
+      'object' => array(
+        'description' => t('The associated drupal object.'),
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'type' => array(
+        'description' => t('The type of the associated object.'),
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'context' => array(
+        'description' => t('The context of the relationship.'),
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+    ),
+    'indexes' => array(
+     'object' => array('object'),
+     'type' => array('type'),
+    ),
+    'primary key' => array('rid'),
+  );
+  $schema['riat_chain'] = array(
+    'description' => t('Contains the relationship chains defined in various riat modules'),
+    'fields' => array(
+      'chid' => array(
+        'type' => 'serial',
+        'description' => t('The chain identifier.'),
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'pchid' => array(
+        'description' => t('The parent chain identifier.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'rid' => array(
+        'description' => t('The relationship identifier.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'type' => array(
+        'description' => t('The type of the associated object.'),
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'object' => array(
+        'description' => t('The associated drupal object.'),
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'relationship' => array(
+        'description' => t('The type of relationship that associates these two items.'),
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'weight' => array(
+        'description' => t('The relationship weight.'),
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'size' => 'tiny',
+      ),
+      'multiple' => array(
+        'description' => t('Defines whether the relationship allows multiple instances'),
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'size' => 'tiny',
+      ),
+    ),
+    'indexes' => array(
+     'weight' => array('weight'),
+     'rid' => array('rid'),
+     'pchid' => array('pchid'),
+    ),
+    'primary key' => array('chid'),
+  );
+  return $schema;
+}

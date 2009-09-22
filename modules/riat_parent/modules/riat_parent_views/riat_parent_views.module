@@ -1,0 +1,213 @@
+<?php
+// $Id: riat_parent_views.module,v 1.4 2009/08/17 21:09:21 eclipsegc Exp $
+
+/**
+ * Implementation of hook_help().
+ */
+
+function riat_parent_views_help($path, $arg) {
+  $output = '';
+  switch ($path) {
+    case 'admin/build/relationships/chid/%/views':
+      $output .= '<p>'. t('You may prevent this view from displaying on its parent node type all together (if you would like to perhaps utilize them in some manual way and don\'t want RIAT to display them).') .'</p>';
+      return $output;
+  }
+}
+
+/**
+ * Implementation of hook_menu().
+ */
+
+function riat_parent_views_menu() {
+  $items = array();
+  $items['admin/build/relationships/chid/%riat_chid/views'] = array(
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('riat_parent_views_display', 4),
+    'access arguments' => array('manage riat views'),
+    'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+/**
+ * Implementation of the hook_perm().
+ */
+
+function riat_parent_views_perm() {
+  return array('manage riat views');
+}
+
+/**
+ * Implementation of the hook_form_alter().
+ */
+
+function riat_parent_views_form_alter(&$form, $form_state, $form_id) {
+  switch ($form_id) {
+    case 'riat_relationship_chid_edit';
+      $form['full_chid'] = array(
+        '#type' => 'value',
+        '#value' => riat_chid_load($form['chid']['#value']),
+      );
+      // this is done because the default handler drupal_goto()s and screws it all up...
+      // probably a better way to do this that I don't know yet... maybe $form['#action'] ??
+      $form['#submit'][] = 'riat_parent_views_db_sync';
+      break;
+    case 'riat_relationship_add_relationship_form':
+      $form['#submit'][] = 'riat_parent_views_db_sync';
+      break;
+    case 'riat_relationship_chid_delete':
+      $form['#submit'][] = 'riat_parent_views_db_sync';
+      break;
+  }
+}
+
+/**
+ * Implementation of the hook_nodeapi().
+ */
+
+function riat_parent_views_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
+  switch ($op) {
+    case 'view':
+      // If this node is participating in a relationship AND we're actually viewing a node that is a page.
+      if ($node->riat['rid'] && $a4) {
+        // Find our children.
+        if ($pchid = riat_pchid_load($node->riat['chid'], $node->riat['rid'])) {
+          foreach ($pchid as $item) {
+            $chids[] = $item->chid;
+          }
+          // Get a listing of all our displayed views in order of their current weight.
+          $query = db_query("SELECT rpv.view_name FROM {riat_parent_views} rpv INNER JOIN {riat_chain} rc ON rc.chid = rpv.chid WHERE rpv.chid IN (". db_placeholders($chids) .") AND rpv.state = 0 ORDER BY rc.weight ASC", $chids);
+          // Give us a nice big number for starting weight to place it as far down the content of the node as possible.
+          $weight = 50;
+          while ($result = db_fetch_object($query)) {
+            // Load our view.
+            $view = views_embed_view($result->view_name);
+            // Check to make sure we have something.
+            if ($view) {
+              // Embed our view and increment weight by 1 for the next view.
+              $node->content[$result->view_name] = array(
+                '#value' => $view,
+                '#weight' => $weight++,
+              );
+            }
+          }
+        }
+      }
+      break;
+  }
+}
+
+function riat_parent_views_db_sync($form, &$form_state) {
+  $values = (object) $form_state['values'];
+  switch ($values->form_id) {
+    case 'riat_relationship_chid_edit':
+      if ($values->full_chid->pchid) {
+        $parent = riat_chid_load($values->full_chid->pchid);
+      }
+      else {
+        $parent = $values->rid;
+      }
+      $view_name = $values->chid .'_'. $parent->type .'_'. $values->full_chid->type;
+      $query = db_query("SELECT * FROM {riat_parent_views} WHERE view_name = '%s'", $view_name);
+      if (!db_fetch_array($query)) {
+        db_query("INSERT into {riat_parent_views} (chid, rid, view_name, state) VALUES (%d, %d, '%s', %d)", $values->chid, $values->rid->rid, $view_name, 0);
+      }
+      views_invalidate_cache();
+      break;
+    case 'riat_relationship_add_relationship_form':
+      if ($values->chid->pchid) {
+        $parent = riat_chid_load($values->chid->pchid);
+      }
+      else {
+        $parent = $values->chain;
+      }
+      $view_name = $values->chid->chid .'_'. $parent->type .'_'. $values->chid->type;
+      db_query("INSERT INTO {riat_parent_views} (chid, rid, view_name, state) VALUES (%d, %d, '%s', %d)", $values->chid->chid, $values->chain->rid, $view_name, 0);
+      views_invalidate_cache();
+      break;
+    case 'riat_relationship_chid_delete':
+      db_query("DELETE FROM {riat_parent_views} WHERE chid = %d", $values->chid);
+      views_invalidate_cache();
+      break;
+  }
+}
+
+function riat_parent_views_display($form_state, $chid) {
+  $rid = riat_load($chid->rid);
+  if ($chid->pchid) {
+    $pchid = riat_chid_load($chid->pchid);
+    $view_name = $chid->chid .'_'. $pchid->type .'_'. $chid->type;
+  }
+  else {
+    $view_name = $chid->chid .'_'. $rid->type .'_'. $chid->type;
+  }
+  $breadcrumb = array(
+    l(t('Home'), NULL),
+    l(t('Administer'), 'admin'),
+    l(t('Site Building'), 'admin/build'),
+    l(t('Relationships'), 'admin/build/relationships'),
+    l(t('Parents'), 'admin/build/relationships/'. $rid->context),
+    l(t($rid->title), 'admin/build/relationships/'. $rid->context .'/chain/'. $rid->rid),
+  );
+  drupal_set_breadcrumb($breadcrumb);
+  $form = array();
+  $form['chid'] = array(
+    '#type' => 'value',
+    '#value' => $chid,
+  );
+  $form['rid'] = array(
+    '#type' => 'value',
+    '#value' => $rid,
+  );
+  $form['view_name'] = array(
+    '#type' => 'value',
+    '#value' => $view_name,
+  );
+  $form['active_state'] = array(
+    '#type' => 'radios',
+    '#title' => t('Display Settings'),
+    '#options' => array(
+      0 => 'display',
+      1 => 'hide',
+    ),
+    '#default_value' => db_result(db_query("SELECT state FROM {riat_parent_views} WHERE view_name = '%s'", $view_name)),
+  );
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save'),
+  );
+  return $form;
+}
+
+function riat_parent_views_display_submit($form, &$form_state) {
+  $values = (object) $form_state['values'];
+  $rid = $values->rid;
+  $view_name = $values->view_name;
+  db_query("UPDATE {riat_parent_views} SET state = %d WHERE view_name = '%s'", $values->active_state, $view_name);
+  $form_state['redirect'] = 'admin/build/relationships/'. $rid->context .'/chain/'. $rid->rid;
+}
+
+/**
+ * Implementation of hook_views_api().
+ */
+
+function riat_parent_views_views_api() {
+  return array(
+    'api' => 2,
+    'path' => drupal_get_path('module', 'riat_parent_views') . '/includes',
+  );
+}
+
+/**
+ * Implementation of hook_riat_chain_menu().
+ */
+
+function riat_parent_views_riat_chain_menu($item) {
+  if (user_access('manage riat views')) {
+    $options[] = array(
+      'title' => 'Views Settings',
+      'href' => 'admin/build/relationships/chid/'. $item['chid'] .'/views',
+    );
+    return $options;
+  }
+}

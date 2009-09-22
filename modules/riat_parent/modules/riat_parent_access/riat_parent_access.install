@@ -1,0 +1,156 @@
+<?php
+// $Id: riat_parent_access.install,v 1.2 2009/08/03 13:32:13 eclipsegc Exp $
+
+function riat_parent_access_install() {
+  db_query("UPDATE {system} SET weight = 52 WHERE name = 'riat_parent_access'");
+  drupal_install_schema('riat_parent_access');
+  $query = db_query("SELECT rid FROM {riat_chain_definition}");
+  while ($result = db_fetch_object($query)) {
+    db_query("INSERT INTO {riat_parent_access_rid_settings} (rid, setting) VALUES (%d, 'public')", $result->rid);
+  }
+  $query = db_query("SELECT chid FROM {riat_chain}");
+  while ($result = db_fetch_object($query)) {
+    db_query("INSERT INTO {riat_parent_access_chid_settings} (chid, setting) VALUES (%d, 'inherit')", $result->chid);
+  }
+  $query = db_query("SELECT chid, nid FROM {riat_node_relationship}");
+  while ($result = db_fetch_object($query)) {
+    if ($result->chid) {
+      db_query("INSERT INTO {riat_parent_access_nid_settings} (nid, setting) VALUES (%d, 'inherit')", $result->nid);
+    }
+    else {
+      db_query("INSERT INTO {riat_parent_access_nid_settings} (nid, setting) VALUES (%d, 'public')", $result->nid);
+    }
+  }
+}
+
+function riat_parent_access_uninstall() {
+  drupal_uninstall_schema('riat_parent_access');
+}
+
+function riat_parent_access_schema() {
+  $schema['riat_parent_access_users'] = array(
+    'description' => t('A table that holds the uid to gid relationships'),
+    'fields' => array(
+      'id' => array(
+        'type' => 'serial',
+        'description' => t('A unique identifier.'),
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'uid' => array(
+        'description' => t('The primary user identifier.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'gid' => array(
+        'description' => t('The primary grant identifier.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+    ),
+   'indexes' => array(
+     'uid' => array('uid'),
+     'gid' => array('gid'),
+    ),
+   'primary key' => array('id'),
+  );
+  $schema['riat_parent_access_perms'] = array(
+    'description' => t('A table that holds the uid to gid permissions for a user'),
+    'fields' => array(
+      'id' => array(
+        'type' => 'int',
+        'description' => t('A unique identifier.'),
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'perm' => array(
+        'description' => t('An octal representation of the permission.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+    ),
+   'indexes' => array(
+     'perm' => array('perm'),
+    ),
+   'primary key' => array('id'),
+  );
+  $schema['riat_parent_access_rid_settings'] = array(
+    'description' => t('A table that defines the default settings for a relationship chain'),
+    'fields' => array(
+      'rid' => array(
+        'type' => 'int',
+        'description' => t('The relationship identifier.'),
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'setting' => array(
+        'description' => t('A string representing the starting access for any relationship chain.'),
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+      ),
+    ),
+   'primary key' => array('rid'),
+  );
+  $schema['riat_parent_access_chid_settings'] = array(
+    'description' => t('A table that defines the default settings for a chain link.'),
+    'fields' => array(
+      'chid' => array(
+        'type' => 'int',
+        'description' => t('The chain link identifier.'),
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'setting' => array(
+        'description' => t('A string representing the default access for any chain link.'),
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+      ),
+    ),
+   'primary key' => array('chid'),
+  );
+  $schema['riat_parent_access_nid_settings'] = array(
+    'description' => t('A table that defines the settings for a node.'),
+    'fields' => array(
+      'nid' => array(
+        'type' => 'int',
+        'description' => t('The chain link identifier.'),
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'setting' => array(
+        'description' => t('A string representing the access type for any riat node.'),
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+      ),
+    ),
+   'primary key' => array('nid'),
+  );
+  $schema['riat_parent_access_staging_access'] = array(
+    'description' => t('A table that holds the uid to hash access for new nodes.'),
+    'fields' => array(
+      'uid' => array(
+        'type' => 'int',
+        'description' => t('The user identifier.'),
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'hash' => array(
+        'description' => t('A unique hash that determines what node we will '),
+        'type' => 'varchar',
+        'length' => 256,
+        'not null' => TRUE,
+      ),
+    ),
+   'indexes' => array(
+     'uid' => array('uid'),
+     'hash' => array('hash'),
+    ),
+  );
+  return $schema;
+}

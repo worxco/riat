@@ -1,0 +1,646 @@
+<?php
+// $Id: riat.module,v 1.6 2009/07/30 07:02:12 eclipsegc Exp $
+
+/**
+ * Implementation of hook_help().
+ */
+
+function riat_help($path, $arg) {
+  $output = '';
+  switch ($path) {
+    case 'admin/build/relationships':
+      $output .= '<p>'. t('The relationships API uses a couple of key concepts to do its work.  The first concept to understand is the idea of "casting".  We cast all relationship eligible objects before defining their relationship to other objects.  In the case of nodes this would be done by selecting casts for which each node type is eligible.') .'</p>';
+      $output .= '<p>'. t('For example, a given content type might be eligible to be only a parent. This would make it a top level node type.  Then another content type might only be eligible to be cast as a child.  This node could then be defined as being eligible to be a child of any parent node types.') .'</p>';
+      $output .= '<p>'. t('Casting is an incredibly powerful way of defining multiple level of inheritence and controlling your users workflow experience with out the need for complicated customized scripts.') .'</p>';
+    return $output;
+    case 'node/%/relationship':
+      $output .= '<h3>'. t('Relationships API Help:') .'</h3>';
+      $output .= '<p>'. t("This is the relationship management admin. It's primary purpose is to create a centralized help location for all the tabs under the the Relationship tab.") .'</p>';
+      return $output;
+  }
+}
+
+
+/**
+ * Implementation of hook_menu().
+ */
+
+function riat_menu() {
+  $items = array();
+  $items['admin/build/relationships'] = array(
+    'title' => 'Relationships',
+    'description' => t('Define the context for all cast relationships.'),
+    'page callback' => 'riat_admin',
+    'access arguments' => array('administer relationships'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+  $items['admin/build/relationships/info'] = array(
+    'title' => 'Information',
+    'description' => t('Define the context for all cast relationships.'),
+    'page callback' => 'riat_admin',
+    'access arguments' => array('administer relationships'),
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+  );
+  $items['node/%node/riat'] = array(
+    'title' => 'RIAT',
+    'page callback' => 'riat_node_help',
+    'access callback' => 'riat_access_rules',
+    'access arguments' => array(1),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 50,
+  );
+  $items['node/%node/riat/help'] = array(
+    'title' => 'Help',
+    'page callback' => 'riat_node_help',
+    'access callback' => 'riat_access_rules',
+    'access arguments' => array(1),
+    'weight' => -50,
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+  );
+  $items['admin/build/relationships/menu'] = array(
+    'title' => t('Menu Management'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('riat_menu_options'),
+    'access arguments' => array('administer riat menus'),
+    'type' => MENU_LOCAL_TASK,
+    'file' => 'riat_menu.inc',
+    'file path' => drupal_get_path('module', 'riat') .'/includes',
+  );
+  $items['admin/build/relationships/menu/%'] = array(
+    'title' => t('Menu Management'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('riat_menu_admin', 4),
+    'access arguments' => array('administer riat menus'),
+    'type' => MENU_LOCAL_TASK,
+    'file' => 'riat_menu.inc',
+    'file path' => drupal_get_path('module', 'riat') .'/includes',
+  );
+  $items['admin/build/relationships/chid/%riat_chid/edit'] = array(
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('riat_relationship_chid_edit', 4),
+    'access arguments' => array('administer relationships'),
+    'file' => 'riat.admin.inc',
+    'file path' => drupal_get_path('module', 'riat'),
+    'type' => MENU_CALLBACK,
+  );
+  $items['admin/build/relationships/chid/%/delete'] = array(
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('riat_relationship_chid_delete', 4),
+    'access arguments' => array('administer relationships'),
+    'file' => 'riat.admin.inc',
+    'file path' => drupal_get_path('module', 'riat'),
+    'type' => MENU_CALLBACK,
+  );
+  $items['admin/build/relationships/chid/%riat_chid/menu'] = array(
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('riat_menu_chid_admin', 4),
+    'access arguments' => array('administer relationships'),
+    'file' => 'riat_menu.inc',
+    'file path' => drupal_get_path('module', 'riat') .'/includes',
+    'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+function riat_menu_alter(&$items) {
+  $delete_query = db_query("SELECT mlid FROM {riat_menu_tracker}");
+  while ($delete = db_fetch_object($delete_query)) {
+    menu_link_delete($delete->mlid);
+  }
+  db_query("TRUNCATE {riat_menu_tracker}");
+  $plid = db_result(db_query("SELECT mlid FROM {menu_links} WHERE link_path = 'node/add'"));
+  $query = db_query("SELECT rid, title, description, type FROM {riat_chain_definition} WHERE object = 'node' ORDER BY title");
+  while ($result = db_fetch_object($query)) {
+    $path = strtolower(str_replace(' ', '_', $result->title));
+    $items['node/add/'. $result->rid] = array(
+      'title callback' => 'check_plain',
+      'title' => $result->title,
+      'description' => $result->description,
+      'page callback' => 'node_add',
+      'page arguments' => array($result->type),
+      'file' => 'node.pages.inc',
+      'file path' => drupal_get_path('module', 'node'),
+      'access arguments' => array('create '. strtolower($result->title) .' chains'),
+      'type' => MENU_LOCAL_TASK,
+    );
+    $menu_item = array(
+      'link_title' => $result->title,
+      'link_path' => 'node/add/'. $result->rid,
+      'router_path' => 'node/add/'. $result->rid,
+      'expanded' => 0,
+      'options' => array(),
+      'plid' => $plid,
+    );
+    $mlid = menu_link_save($menu_item);
+    db_query("INSERT INTO {riat_menu_tracker} (mlid, rid) VALUES (%d, %d)", $mlid, $result->rid);
+  }
+  module_load_include('inc', 'riat', 'includes/riat_menu');
+  $results = riat_menu_get_context('block');
+  if ($results) {
+    foreach ($results as $item) {
+      $relationship = riat_chid_load($item['chid']);
+      $items['node/%node/create_'. $relationship->chid] = array(
+        'title' => 'Create '. ucfirst($relationship->type),
+        'page callback' => 'riat_node_add',
+        'page arguments' => array($relationship->type),
+        'file' => 'riat.pages.inc',
+        'file path' => drupal_get_path('module', 'riat') .'/includes',
+        'access callback' => 'riat_menu_callback',
+        'access arguments' => array(1, $relationship),
+        'weight' => 51,
+        'type' => MENU_CALLBACK,
+      );
+    }
+  }
+  $results = riat_menu_get_context('link');
+  if ($results) {
+    foreach ($results as $item) {
+      $relationship = riat_chid_load($item['chid']);
+      $items['node/%node/create_'. $relationship->chid] = array(
+        'title' => 'Create '. ucfirst($relationship->type),
+        'page callback' => 'riat_node_add',
+        'page arguments' => array($relationship->type),
+        'file' => 'riat.pages.inc',
+        'file path' => drupal_get_path('module', 'riat') .'/includes',
+        'access callback' => 'riat_menu_callback',
+        'access arguments' => array(1, $relationship),
+        'weight' => 51,
+        'type' => MENU_CALLBACK,
+      );
+    }
+  }
+  $results = riat_menu_get_context('tab');
+  if ($results) {
+    foreach ($results as $item) {
+      $relationship = riat_chid_load($item['chid']);
+      $items['node/%node/create_'. $relationship->chid] = array(
+        'title' => 'Create '. ucfirst($relationship->type),
+        'page callback' => 'riat_node_add',
+        'page arguments' => array($relationship->type),
+        'file' => 'riat.pages.inc',
+        'file path' => drupal_get_path('module', 'riat') .'/includes',
+        'access callback' => 'riat_menu_callback',
+        'access arguments' => array(1, $relationship),
+        'weight' => 51,
+        'type' => MENU_LOCAL_TASK,
+      );
+    }
+  }
+  $types = node_get_types();
+  foreach ($types as $type) {
+    $hide = variable_get('riat_hide_'. $type->type, 0);
+    if ($hide) {
+      unset($items['node/add/'. $type->type]);
+    }
+  }
+}
+
+function riat_menu_callback($node, $relationship) {
+  global $user;
+  if ($node->riat['rid'] == $relationship->rid && $node->riat['chid'] == $relationship->pchid) {
+    $rid = riat_load($relationship->rid);
+    return user_access('create '. strtolower($rid->title) .' chains');
+  }
+  //$perms = module_invoke_all('riat_perms');
+  return FALSE;
+}
+
+function riat_load($rid) {
+  $chain = db_fetch_object(db_query("SELECT rid, title, description, object, type, context FROM {riat_chain_definition} WHERE rid = %d", $rid));
+  return $chain;
+}
+
+function riat_chid_load($chid) {
+  return db_fetch_object(db_query("SELECT * FROM {riat_chain} WHERE chid = %d", $chid));
+}
+
+function riat_chid_delete($chid, $op = 'move') {
+  $children = riat_pchid_load($chid);
+  $item = riat_chid_load($chid);
+  switch ($op) {
+    case 'move':
+      db_query("DELETE FROM {riat_chain} WHERE chid = %d", $chid);
+      if ($children) {
+        foreach ($children as $child) {
+          $child->pchid = $item->pchid;
+          drupal_write_record('riat_chain', $child, 'chid');
+        }
+      }
+      break;
+    case 'delete':
+      db_query("DELETE FROM {riat_chain} WHERE chid = %d", $chid);
+      if ($children) {
+        foreach ($children as $child) {
+          riat_chid_delete($child->chid, 'delete');
+        }
+      }
+      break;
+  }
+}
+
+function riat_pchid_load($pchid, $rid = NULL) {
+  if (is_null($rid)) {
+    $query = db_query("SELECT chid, pchid, rid, weight, multiple FROM {riat_chain} WHERE pchid = %d", $pchid);
+  }
+  else {
+    $query = db_query("SELECT chid, pchid, rid, weight, multiple FROM {riat_chain} WHERE pchid = %d AND rid = %d", $pchid, $rid);
+  }
+  while ($result = db_fetch_object($query)) {
+    $results[] = $result;
+  }
+  return $results;
+}
+
+/**
+ * riat_node_help()
+ * A helper function to get contextual help for a given node/type
+ * allows individual modules to provide new help for a features
+ * it may add to node/%/relationship.
+ *
+ * It's important to note that this utilizies callbacks defined
+ * in hook_riat_relationships and not a simple module_invoke_all().
+ */
+
+function riat_node_help() {
+  $help = array();
+  $relationships = riat_get_all('node');
+  foreach ($relationships as $relationship) {
+    $help[] = module_invoke($relationship['callback'], 'riat_node_help');
+  }
+  $output = '';
+  foreach ($help as $text) {
+    $output .= $text;
+  }
+  return $output;
+}
+
+/**
+ * riat_access_help()
+ * A helper function to get access to the contextual help
+ * provided by riat_node_help().
+ */
+
+function riat_access_rules($node) {
+  $access = array();
+  $relationships = riat_get_all('node');
+  foreach ($relationships as $relationship) {
+    $callback = $relationship['callback'];
+    if ($callback) {
+      $access[] = module_invoke($callback, 'riat_access_rules', $node);
+      foreach ($access as $value) {
+        if ($value) {
+          return TRUE;
+        }
+      }
+    }
+  }
+  return FALSE;
+}
+
+/**
+ * Implementation of hook_perm().
+ */
+
+function riat_perm() {
+  $perms = array();
+  $query = db_query("SELECT rid, title, description, type FROM {riat_chain_definition} ORDER BY title");
+  while ($result = db_fetch_object($query)) {
+    $perms[] = 'create '. strtolower($result->title) .' chains';
+  }
+  $perms[] = 'administer relationships';
+  $perms[] = 'administer riat menus';
+  return $perms;
+}
+
+/**
+ * We're going to gather together all the available relationships, or limit
+ * those availble to a certain context.  This function should be called by
+ * any module developer that needs specialized contexts for their own module.
+ */
+
+function riat_get_all($context = NULL) {
+  $relationships = module_invoke_all('riat_relationships');
+  if (!is_null($context)) {
+    if (is_string($context)) {
+      $items = array();
+      foreach ($relationships as $name => $relationship) {
+        if ($relationship['context'] == $context) {
+          $items[$name] = $relationship;
+        }
+      }
+    }
+    elseif (is_array($context)) {
+      $items = array();
+      foreach ($context as $key => $value) {
+        foreach ($relationships as $name => $relationship) {
+          if (isset($relationship[$key])) {
+            $items[$name] = $relationship;
+          }
+        }
+      }
+    }
+    return $items;
+  }
+  else {
+    return $relationships;
+  }
+}
+
+/**
+ * Returns all the relationships a particular type of item is eligible for
+ * within a particular context.  Assumes a node context.
+ */
+
+function riat_get($type, $context = 'node') {
+  $relationships = riat_get_all($context);
+  $relationship = array();
+  foreach ($relationships as $name => $item) {
+    $cast = variable_get($context .'_'. $type .'_'. $name, 0);
+    if ($cast) {
+      $relationship[$name] = $item;
+    }
+  }
+  return $relationship;
+}
+
+/**
+ * Implementation of hook_form_alter().
+ */
+
+function riat_form_alter(&$form, &$form_state, $form_id) {
+  // Make sure we're on a node form and that this instance of this node type is part of some riat chain.
+  if (isset($form['#node']) && $form_id == $form['#node']->type .'_node_form' && is_numeric($form['#node']->riat['rid'])) {
+    $node = $form['#node'];
+    if ($node->riat['chid']) {
+      $name = db_result(db_query("SELECT relationship FROM {riat_chain} WHERE chid = %d", $node->riat['chid']));
+      $relationships = riat_get_all('node');
+      $relationship = $relationships[$name];
+      $form[$name .'_form'] = module_invoke($relationship['callback'], 'node_form_elements', array(), $node);
+      $form[$name .'_form']['#tree'] = TRUE;
+      // WTF IS THIS?
+      $form[$name] = array(
+        '#type' => 'value',
+        '#value' => $node->type .'_'. $name,
+      );
+      // /END WTF/
+      if (!in_array($relationship['callback'] .'_node_form_elements_validate', $form['#validate'])) {
+        $form['#validate'][] = $relationship['callback'] .'_node_form_elements_validate';
+      }
+      $form['riat']['callback'] = array(
+        '#type' => 'value',
+        '#value' => $relationship['callback'],
+        '#tree' => TRUE,
+      );
+      $form['riat']['rel_key'] = array(
+        '#type' => 'value',
+        '#value' => $name,
+        '#tree' => TRUE,
+      );
+      // hook_relationship_save() within the nodeapi insert operator will save our element.
+    }
+    $form['riat']['rid'] = array(
+      '#type' => 'value',
+      '#value' => $node->riat['rid'],
+      '#tree' => TRUE,
+    );
+    $form['riat']['chid'] = array(
+      '#type' => 'value',
+      '#value' => $node->riat['chid'],
+      '#tree' => TRUE,
+    );
+  }
+}
+
+function riat_admin() {
+  return '';
+}
+
+function riat_node_context($nid){
+  $query = db_query("SELECT rid, chid FROM {riat_node_relationship} WHERE nid = %d", $nid);
+  while ($result = db_fetch_object($query)) {
+    $results['rid'] = $result->rid;
+    $results['chid'] = $result->chid;
+  }
+  return $results;
+}
+
+function riat_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
+  switch ($op) {
+    case 'prepare':
+      if (arg(0) == 'node' && arg(1) == 'add' && is_numeric(arg(2))) {
+        $node->riat['rid'] = arg(2);
+        $node->riat['chid'] = 0;
+      }
+      else {
+        $chid = explode('_', arg(2));
+        $chid = riat_chid_load($chid[1]);
+        $node->riat['rid'] = $chid->rid;
+        $node->riat['chid'] = $chid->chid;
+      }
+      break;
+    case 'load':
+      $context = riat_node_context($node->nid);
+      $return['riat']['rid'] = $context['rid'];
+      $return['riat']['chid'] = $context['chid'];
+      $name = db_result(db_query("SELECT relationship FROM {riat_chain} WHERE chid = %d", $context['chid']));
+      $relationships = riat_get_all('node');
+      $relationship = $relationships[$name];
+      $return['riat']['callback'] = $relationship['callback'];
+      $return['riat']['rel_key'] = $name;
+      return $return;
+    case 'update':
+    case 'insert':
+      riat_api("node $op", $node, $node->uid, $pid);
+      $callback = $node->callback ? $node->callback : $node->riat['callback'];
+      $rid = $node->rid ? $node->rid : $node->riat['rid'];
+      if ($callback) {
+        module_invoke($callback ,'relationship_save', $node, $op);
+      }
+      elseif ($rid) {
+        riat_node_relationship_save($rid, $node->chid, $node->nid, 0, 'chain_parent');
+      }
+      break;
+    case 'delete':
+      db_query("DELETE FROM {riat_node_relationship} WHERE nid = %d", $node->nid);
+      break;
+  }
+}
+
+function riat_lookup($id, $type = 'nid') {
+  switch ($type) {
+    case 'rid':
+      $query = db_query("SELECT rid, chid, nid, aid, relationship FROM {riat_node_relationship} WHERE `rid` = %d", $id);
+      break;
+    case 'chid':
+      $query = db_query("SELECT rid, chid, nid, aid, relationship FROM {riat_node_relationship} WHERE `chid` = %d", $id);
+      break;
+    case 'nid':
+      $query = db_query("SELECT rid, chid, nid, aid, relationship FROM {riat_node_relationship} WHERE `nid` = %d", $id);
+      break;
+    case 'aid':
+      $query = db_query("SELECT rid, chid, nid, aid, relationship FROM {riat_node_relationship} WHERE `aid` = %d", $id);
+      break;
+    case 'relationship':
+      $query = db_query("SELECT rid, chid, nid, aid, relationship FROM {riat_node_relationship} WHERE `relationship` = '%s'", $id);
+      break;
+  }
+  $results = array();
+  while ($object = db_fetch_object($query)) {
+    $results[] = $object;
+  }
+  return $results;
+}
+
+function riat_node_relationship_save($rid, $chid, $nid, $aid, $relationship, $op = 'insert') {
+  switch ($op) {
+    case 'insert';
+      db_query("INSERT INTO {riat_node_relationship} (rid, chid, nid, aid, relationship) VALUES (%d, %d, %d, %d, '%s')", $rid, $chid, $nid, $aid, $relationship);
+      break;
+    case 'update':
+      db_query("UPDATE {riat_node_relationship} SET aid = %d WHERE nid = %d AND relationship = '%s'", $aid, $nid, $relationship);
+      break;
+  }
+}
+
+/**
+ * riat_rapi invokes hook_relationship_api
+ * @param $op
+ *  'node insert'
+ *    @param $uid
+ *      $node->user
+ *  'node update'
+ *    @param $uid
+ *      $node->user
+ *  'update access'
+ *    @param $uid
+ *      $node->user
+ *  'add user'
+ *    @param $uid
+ *      The $user->uid of the user who was just added to access the node (this is rebuilt every time any users are added or removed).
+ * 'delete user'
+ *    @param $uid
+ *      The $user->uid of the user who was just deleted from accessing the node (this is rebuilt every time any users are added or removed).
+ *  
+ *  
+ */
+
+function riat_api($op, $node, $uid, $pid) {
+  //$node = node_load($node->nid); // reload the $node object to make sure we have all the extras we need.
+  module_invoke_all('riat_api', $op, $node, $uid, $pid);
+}
+
+/**
+ * Implementation of hook_views_api().
+ */
+function riat_views_api() {
+  return array(
+    'api' => 2,
+  );
+}
+
+/**
+ * Implementation of hook_views_data().
+ */
+
+function riat_views_data() {
+  $data['riat_node_relationship']['table']['group'] = t('Relationship');
+  
+  $data['riat_node_relationship']['table']['join']['node'] = array(
+    'left_field' => 'nid',
+    'field' => 'nid',
+  );
+
+  $data['riat_node_relationship']['nid'] = array(
+    'title' => t('Nid'),
+    'help' => t('The node ID of the node.'),
+    'field' => array(
+      'handler' => 'views_handler_field_node',
+      'click sortable' => TRUE,
+    ),
+    'argument' => array(
+      'handler' => 'views_handler_argument_node_nid',
+      'name field' => 'title',
+      'numeric' => TRUE,
+      'validate type' => 'nid',
+    ),
+    'filter' => array(
+      'handler' => 'views_handler_filter_numeric',
+    ),
+    'sort' => array(
+      'handler' => 'views_handler_sort',
+    ),
+  );
+  $data['riat_node_relationship']['aid'] = array(
+    'title' => t('Aid'),
+    'help' => t('The node ID of the associated node.'),
+    'field' => array(
+      'handler' => 'riat_handler_field_node',
+      'click sortable' => TRUE,
+    ),
+    'argument' => array(
+      'handler' => 'views_handler_argument_node_nid',
+      'name field' => 'title',
+      'numeric' => TRUE,
+      'validate type' => 'nid',
+    ),
+    'filter' => array(
+      'handler' => 'views_handler_filter_numeric',
+    ),
+    'sort' => array(
+      'handler' => 'views_handler_sort',
+    ),
+  );
+  $data['riat_node_relationship']['relationship'] = array(
+    'title' => t('Relationships type'),
+    'help' => t('The type of relationship the two node ids have to each other.'),
+    'field' => array(
+      'handler' => 'views_handler_field_markup',
+      'format' => FILTER_FORMAT_DEFAULT,
+      'click sortable' => FALSE,
+    ),
+    'filter' => array(
+      'handler' => 'riat_handler_filter_relationship',
+    ),
+  );
+  return $data;
+}
+
+/**
+ * Implementation of hook_views_handlers.
+ */
+function riat_views_handlers() {
+ return array(
+    'info' => array(
+      'path' => drupal_get_path('module', 'riat') .'/includes',
+    ),
+    'handlers' => array(
+      'riat_handler_filter_relationship' => array(
+        'parent' => 'views_handler_filter_in_operator',
+      ),
+      'riat_handler_field_node' => array(
+        'parent' => 'views_handler_field_node',
+      ),
+    ),
+  );  
+}
+
+function riat_link($type, $node = NULL, $teaser = FALSE) {
+  $links = array();
+  module_load_include('inc', 'riat', 'includes/riat_menu');
+  if ($type == 'node' && !$teaser) {
+    if ($results = riat_menu_get_context('link')) {
+      foreach ($results as $link) {
+        $relationship = riat_chid_load($link['chid']);
+        if (riat_menu_callback($node, $relationship)) {
+          $links[$relationship->chid] = array(
+            'title' => t("Create ". $relationship->type),
+            'href' => "node/$node->nid/create_". $relationship->chid,
+            'attributes' => array('title' => t('Create a new !type.', array('!type' => $relationship->type)))
+          );
+        }
+      }
+    }
+  }
+
+  return $links;
+}

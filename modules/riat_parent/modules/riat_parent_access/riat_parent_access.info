@@ -1,0 +1,6 @@
+; $Id: riat_parent_access.info,v 1.1 2009/07/29 22:20:36 eclipsegc Exp $
+name = "RIAT Parent Access"
+description = "A component for defining access controls within RIAT parent defined chains."
+package = "Relationship Is Already Taken"
+core = 6.x
+dependencies[] = riat_parent
