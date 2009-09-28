@@ -103,7 +103,7 @@ function riat_menu() {
 }
 
 /**
- * Implementation of hook_menu_alter
+ * Implementation of hook_menu_alter.
  */
 
 function riat_menu_alter(&$items) {
