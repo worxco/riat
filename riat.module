@@ -102,6 +102,10 @@ function riat_menu() {
   return $items;
 }
 
+/**
+ * Implementation of hook_menu_alter
+ */
+
 function riat_menu_alter(&$items) {
   $delete_query = db_query("SELECT mlid FROM {riat_menu_tracker}");
   while ($delete = db_fetch_object($delete_query)) {
