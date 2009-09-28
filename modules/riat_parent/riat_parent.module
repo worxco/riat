@@ -495,7 +495,6 @@ function riat_parent_child_reparent_submit($form, &$form_state) {
   $node->riat_parent['aid'] = $pnode->nid;
   $node->riat_parent['title'] = $pnode->title;
   $node->riat_parent['formatted'] = $pnode->title .' [nid:'. $pnode->nid .']';
-  //drupal_set_message('<pre>'. print_r($node, TRUE) .'</pre>');
   node_save($node);
   drupal_set_message(t("$node->nid has been reparented to $pnode->nid"));
   $batch = array(

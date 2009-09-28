@@ -121,7 +121,7 @@ function riat_menu_alter(&$items) {
       'file' => 'node.pages.inc',
       'file path' => drupal_get_path('module', 'node'),
       'access arguments' => array('create '. strtolower($result->title) .' chains'),
-      'type' => MENU_LOCAL_TASK,
+      'type' => MENU_CALLBACK,
     );
     $menu_item = array(
       'link_title' => $result->title,
@@ -190,7 +190,8 @@ function riat_menu_alter(&$items) {
   foreach ($types as $type) {
     $hide = variable_get('riat_hide_'. $type->type, 0);
     if ($hide) {
-      unset($items['node/add/'. $type->type]);
+      $content_type = str_replace('_', '-', $type->type);
+      unset($items['node/add/'. $content_type]);
     }
   }
 }
@@ -543,14 +544,16 @@ function riat_views_api() {
  */
 
 function riat_views_data() {
-  $data['riat_node_relationship']['table']['group'] = t('Relationship');
+  // Fake table for relationship definition:
+  $data['riat_anode_relationship']['table']['group'] = t('Relationship');
   
-  $data['riat_node_relationship']['table']['join']['node'] = array(
+  $data['riat_anode_relationship']['table']['join']['node'] = array(
     'left_field' => 'nid',
-    'field' => 'nid',
+    'field' => 'aid',
+    'table' => 'riat_node_relationship',
   );
-
-  $data['riat_node_relationship']['nid'] = array(
+  
+  $data['riat_anode_relationship']['nid'] = array(
     'title' => t('Nid'),
     'help' => t('The node ID of the node.'),
     'field' => array(
@@ -566,10 +569,38 @@ function riat_views_data() {
     'filter' => array(
       'handler' => 'views_handler_filter_numeric',
     ),
+    'relationship' => array(
+      'label' => t('Downstream Node'),
+      'base' => 'node',
+      'base field' => 'nid',
+    ),
     'sort' => array(
       'handler' => 'views_handler_sort',
     ),
   );
+  
+  $data['riat_anode_relationship']['relationship'] = array(
+    'title' => t('Relationships type'),
+    'help' => t('The type of relationship the two node ids have to each other.'),
+    'field' => array(
+      'handler' => 'views_handler_field_markup',
+      'format' => FILTER_FORMAT_DEFAULT,
+      'click sortable' => FALSE,
+    ),
+    'filter' => array(
+      'handler' => 'riat_handler_filter_relationship',
+    ),
+  );
+  
+  // Real table definitions
+  
+  $data['riat_node_relationship']['table']['group'] = t('Relationship');
+  
+  $data['riat_node_relationship']['table']['join']['node'] = array(
+    'left_field' => 'nid',
+    'field' => 'nid',
+  );
+
   $data['riat_node_relationship']['aid'] = array(
     'title' => t('Aid'),
     'help' => t('The node ID of the associated node.'),
@@ -585,6 +616,11 @@ function riat_views_data() {
     ),
     'filter' => array(
       'handler' => 'views_handler_filter_numeric',
+    ),
+    'relationship' => array(
+      'label' => t('Upstream Node'),
+      'base' => 'node',
+      'base field' => 'nid',
     ),
     'sort' => array(
       'handler' => 'views_handler_sort',
