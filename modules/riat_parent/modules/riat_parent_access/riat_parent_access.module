@@ -86,7 +86,13 @@ function riat_parent_access_menu() {
     'access callback' => 'riat_parent_access_riat_access_rules',
     'access arguments' => array(1),
     'type' => MENU_CALLBACK,
-    'weight' => 20,
+  );
+  $items['node/%node/riat/access/chid_confirm'] = array(
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('riat_parent_access_chid_confirm', 1),
+    'access callback' => 'riat_parent_access_riat_access_rules',
+    'access arguments' => array(1),
+    'type' => MENU_CALLBACK,
   );
   return $items;
 }
@@ -219,11 +225,7 @@ function riat_parent_access_riat_access_submit($form, &$form_state) {
   $chid = $node->chid ? $node->chid : $node->riat['chid'];
   //chid submission
   if ($node->chid_access_settings != $values->chid_access_settings && $values->op == 'Change Access Type') {
-    $node->chid_access_settings = $values->chid_access_settings;
-    node_save($node);
-    if ($values->chid_access_settings == 'inherit') {
-      db_query("DELETE FROM {riat_parent_access_users} WHERE gid = %d", $node->nid);
-    }
+    $form_state['redirect'] = 'node/'. $node->nid .'/riat/access/chid_confirm';
     return;
   }
   elseif ($node->chid_access_settings == $values->chid_access_settings && $values->chid_access_settings == 'independent') {
@@ -267,10 +269,10 @@ function riat_parent_access_riat_access_submit($form, &$form_state) {
       }
     }
   }
+  // add elseif for the origin if w/ a different op.
 }
 
-function riat_parent_access_rid_confirm($form_state, $node) {
-  $node = menu_get_object();
+function riat_parent_access_change_access_type_form() {
   drupal_set_message('By changing the status of this node, you will be required to rebuild node access for all child nodes of this node.  This will be handled automatically through a batch process that will occur immediately after confirming this screen.  <strong>All nodes that depend on this node to determine their own access controls (either inherited or dependent subsets) will be reset to inheritting this nodes access controls.</strong> In the case of setting this node public, that will make all of these nodes public as well.  If you are making this node private, all dependent nodes will depend on it for access controls.', 'warning');
   $form = array();
   $form['confirm'] = array(
@@ -284,6 +286,11 @@ function riat_parent_access_rid_confirm($form_state, $node) {
   return $form;
 }
 
+function riat_parent_access_rid_confirm($form_state, $node) {
+  $form = riat_parent_access_change_access_type_form();
+  return $form;
+}
+
 function riat_parent_access_rid_confirm_submit($form, &$form_state) {
   drupal_get_messages();
   $node = menu_get_object();
@@ -294,10 +301,37 @@ function riat_parent_access_rid_confirm_submit($form, &$form_state) {
     $node->rid_access_settings = 'private';
   }
   node_save($node);
-  if ($values->rid_access_settings == 'public') {
-    //db_query("DELETE FROM {riat_parent_access_users} WHERE gid = %d", $node->nid);
+  if ($node->rid_access_settings == 'public') {
+    db_query("DELETE FROM {riat_parent_access_users} WHERE gid = %d", $node->nid);
   }
-  $descendants = riat_parent_child_descendants_lookup($node->nid);
+  riat_parent_access_descendants_access_rebuild($node->nid);
+  $form_state['redirect'] = 'node/'. $node->nid .'/riat/access';
+}
+
+function riat_parent_access_chid_confirm($form_state, $node) {
+  $form = riat_parent_access_change_access_type_form();
+  return $form;
+}
+
+function riat_parent_access_chid_confirm_submit($form, &$form_state) {
+  drupal_get_messages();
+  $node = menu_get_object();
+  if ($node->chid_access_settings == 'independent') {
+    $node->chid_access_settings = 'inherit';
+  }
+  else {
+    $node->chid_access_settings = 'independent';
+  }
+  node_save($node);
+  if ($node->chid_access_settings == 'inherit') {
+    db_query("DELETE FROM {riat_parent_access_users} WHERE gid = %d", $node->nid);
+  }
+  riat_parent_access_descendants_access_rebuild($node->nid);
+  $form_state['redirect'] = 'node/'. $node->nid .'/riat/access';
+}
+
+function riat_parent_access_descendants_access_rebuild($nid) {
+  $results = db_query("SELECT rrd.did FROM {riat_relationships_descendants} rrd LEFT JOIN {riat_parent_access_nid_settings} rpans ON rrd.did = rpans.nid WHERE rrd.nid = %d ORDER BY rpans.depth", $nid);
   $batch = array(
     'title' => $form_state['values']['op'],
     'progress_message' => 'Reparenting @current of @total.',
@@ -305,13 +339,10 @@ function riat_parent_access_rid_confirm_submit($form, &$form_state) {
     'finished' => '',
     'file' => drupal_get_path('module', 'riat_parent_access') .'/includes/riat_parent_access_rebuild.inc',
   );
-  foreach($descendants as $descendant) {
-    $batch['operations'][] = '';
-    $dnode = node_load($descendant->did);
-    drupal_set_message('<pre>'. print_r($dnode, TRUE) .'</pre>');
+  while ($result = db_fetch_object($results)) {
+    $batch['operations'][] = array('riat_parent_access_acquire_grants', array($result->did, TRUE));
   }
-  //batch_set($batch);
-  $form_state['redirect'] = 'node/'. $node->nid .'/riat/access';
+  batch_set($batch);
 }
 
 function riat_parent_access_find_dependent_chids(&$results = array(), $rid, $pchid = 0) {
@@ -581,10 +612,6 @@ function riat_parent_access_form_alter(&$form, $form_state, $form_id) {
   }
 }
 
-function riat_parent_access_pre_node_save($form, &$form_state) {
-  drupal_set_message('<pre>'. print_r($form_state['values'], TRUE) .'</pre>');
-}
-
 function riat_parent_access_rebuild_confirm_submit($form, &$form_state) {
   module_load_include('inc', 'riat_parent_access', 'includes/riat_parent_access_rebuild');
   riat_parent_access_rebuild(TRUE);
@@ -646,18 +673,20 @@ function riat_parent_access_nodeapi(&$node, $op, $a3, $a4) {
       }
       return $return;
     case 'insert':
-      // I expect a front end on the node create screen to pass users in the format of name [uid:#] as a string.
+      // I expect a front end on the node create screen to pass users in the format of "name [uid:#]" as a string.
       // $raw_users = explode('/r/n', $string_from_form);
       // foreach ($raw_users as $raw_user) {
       //  $node->riat_parent_access[] = substr($raw_user, (strpos($raw_user, 'uid:') + 4), -1);
       //}
       $test = $node->chid_access_settings ? $node->chid_access_settings : $node->rid_access_settings;
       $query = db_query("SELECT uid FROM {riat_parent_access_staging_access} WHERE hash = '%s'", $node->riat_hash);
-      while ($result = db_fetch_object($query)) {
-        $node->riat_parent_access[] = $result->uid;
+      if ($query) {
+        while ($result = db_fetch_object($query)) {
+          $node->riat_parent_access[] = $result->uid;
+        }
       }
-      //$node->riat_parent_access
-      if (is_array($node->riat_parent_access) && ($test == 'independent' || $test == 'private')) { // This test can be altered in the release code to depend on $node->raw_users or whatever as the form_alter has already determined if we shoudl even have this stuff.
+
+      if (is_array($node->riat_parent_access) && ($test == 'independent' || $test == 'private')) {
         foreach($node->riat_parent_access as $uid) {
           $user = user_load(array('uid' => $uid));
           $object = new stdClass();
@@ -673,24 +702,35 @@ function riat_parent_access_nodeapi(&$node, $op, $a3, $a4) {
         unset($_SESSION['riat_hash']);
         db_query("DELETE FROM {riat_parent_access_staging_access} WHERE hash = '%s'", $hash);
       }
+      // No break here so update will continue
     case 'update':
+      // Determine the depth within the tree at which this node resides.
+      if (is_numeric($node->riat_parent['id'])) {
+        $depth = db_result(db_query("SELECT depth FROM {riat_parent_access_nid_settings} WHERE nid = %d", $node->riat_parent['id']));
+        $depth = $depth + 1;
+      }
+      else {
+        $depth = 0;
+      }
       if (isset($node->chid_access_settings)) {
-        riat_parent_access_save_node_access_context($node->nid, $node->chid_access_settings, $op);
+        riat_parent_access_save_node_access_context($node->nid, $node->chid_access_settings, $depth, $op);
       }
       elseif (isset($node->rid_access_settings)) {
-        riat_parent_access_save_node_access_context($node->nid, $node->rid_access_settings, $op);
+        riat_parent_access_save_node_access_context($node->nid, $node->rid_access_settings, $depth, $op);
       }
       break;
     case 'delete':
       db_query("DELETE FROM {riat_parent_access_users} WHERE gid = %d", $node->nid);
+      db_query("DELETE FROM {riat_parent_access_nid_settings} WHERE nid = %d", $node->nid);
       break;
   }
 }
 
-function riat_parent_access_save_node_access_context($nid, $setting, $op = 'insert') {
+function riat_parent_access_save_node_access_context($nid, $setting, $depth, $op = 'insert') {
   $object = new stdClass();
   $object->nid = $nid;
   $object->setting = $setting;
+  $object->depth = $depth;
   switch ($op) {
     case 'insert':
       drupal_write_record('riat_parent_access_nid_settings', $object);

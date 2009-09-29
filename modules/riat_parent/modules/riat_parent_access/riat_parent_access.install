@@ -4,6 +4,7 @@
 function riat_parent_access_install() {
   db_query("UPDATE {system} SET weight = 52 WHERE name = 'riat_parent_access'");
   drupal_install_schema('riat_parent_access');
+  // These following queries need some review.  Probably need to be updated a little bit, or deleted and replaced by hook_update functions.
   $query = db_query("SELECT rid FROM {riat_chain_definition}");
   while ($result = db_fetch_object($query)) {
     db_query("INSERT INTO {riat_parent_access_rid_settings} (rid, setting) VALUES (%d, 'public')", $result->rid);
@@ -126,6 +127,12 @@ function riat_parent_access_schema() {
         'description' => t('A string representing the access type for any riat node.'),
         'type' => 'varchar',
         'length' => 64,
+        'not null' => TRUE,
+      ),
+      'depth' => array(
+        'type' => 'int',
+        'description' => t('Depth within the tree at which this node resides.  Also the order in which nodes will be processed for node access rebuilds'),
+        'unsigned' => TRUE,
         'not null' => TRUE,
       ),
     ),

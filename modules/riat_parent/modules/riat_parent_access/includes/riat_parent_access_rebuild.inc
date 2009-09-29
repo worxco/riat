@@ -12,15 +12,12 @@ function riat_parent_access_rebuild($batch_mode = FALSE) {
         'finished' => '_node_access_rebuild_batch_finished',
         'file' => drupal_get_path('module', 'riat_parent_access') .'/includes/riat_parent_access_rebuild.inc',
       );
-      $query = db_query("SELECT n.nid FROM {node} n LEFT JOIN {riat_node_relationship} rnr ON n.nid = rnr.nid WHERE rnr.nid IS NULL OR rnr.chid = 0");
+      // Select all non-riat nodes.
+      $query = db_query("SELECT n.nid FROM {node} n LEFT JOIN {riat_node_relationship} rnr ON n.nid = rnr.nid WHERE rnr.nid IS NULL");
       while ($result = db_fetch_object($query)) {
         $batch['operations'][] = array('riat_parent_access_acquire_grants', array($result->nid));
       }
-      $query = db_query("SELECT rnr.nid FROM {riat_node_relationship} rnr LEFT JOIN {riat_parent_access_chid_settings} rpacs ON rnr.chid = rpacs.chid WHERE rpacs.setting != 'inherit'");
-      while ($result = db_fetch_object($query)) {
-        $batch['operations'][] = array('riat_parent_access_acquire_grants', array($result->nid));
-      }
-      $query = db_query("SELECT rnr.nid FROM {riat_node_relationship} rnr LEFT JOIN {riat_parent_access_chid_settings} rpacs ON rnr.chid = rpacs.chid WHERE rpacs.setting = 'inherit'");
+      $query = db_query("SELECT nid FROM {riat_parent_access_nid_settings} ORDER BY depth");
       while ($result = db_fetch_object($query)) {
         $batch['operations'][] = array('riat_parent_access_acquire_grants', array($result->nid));
       }
@@ -31,14 +28,13 @@ function riat_parent_access_rebuild($batch_mode = FALSE) {
       if (!ini_get('safe_mode')) {
         set_time_limit(240);
       }
-      $result = db_query("SELECT nid FROM {node}");
+      $result = db_query("SELECT n.nid FROM {node} n LEFT JOIN {riat_node_relationship} rnr ON n.nid = rnr.nid WHERE rnr.nid IS NULL");
       while ($node = db_fetch_object($result)) {
-        $loaded_node = node_load($node->nid, NULL, TRUE);
-        // To preserve database integrity, only aquire grants if the node
-        // loads successfully.
-        if (!empty($loaded_node)) {
-          node_access_acquire_grants($loaded_node);
-        }
+        riat_parent_access_acquire_grants($nid);
+      }
+      $result = db_query("SELECT nid FROM {riat_parent_access_nid_settings} ORDER BY depth");
+      while ($node = db_fetch_object($result)) {
+        riat_parent_access_acquire_grants($nid);
       }
     }
   }
@@ -54,7 +50,17 @@ function riat_parent_access_rebuild($batch_mode = FALSE) {
   }
 }
 
-function riat_parent_access_acquire_grants($nid) {
-  $node = node_load($nid);
-  node_access_acquire_grants($node);
+function riat_parent_access_acquire_grants($nid, $reset = FALSE) {
+  $node = node_load($nid, NULL, TRUE);
+  // To preserve database integrity, only aquire grants if the node
+  // loads successfully.
+  if (!empty($node)) {
+    if ($reset && $node->chid_access_settings_defaults == 'optional_inh' && $node->chid_access_settings == 'independent') {
+      $node->chid_access_settings = 'inherit';
+      node_save($node);
+    }
+    else {
+      node_access_acquire_grants($node);
+    }
+  }
 }
